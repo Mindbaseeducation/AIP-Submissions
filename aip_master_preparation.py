@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from io import BytesIO
-from datetime import date
+from datetime import datetime, date, time, timedelta
 
 st.title("AIP Master Preparation")
 
@@ -21,29 +21,74 @@ if t1:
     df = load_file(t1)
 
     # ---------------------------------------------------------------
-    # Date filter selected on the frontend
+    # Reporting cycles (8:00 AM boundaries):
+    #   Cycle A: 1st (after 8:00 AM)  -> 16th (till 8:00 AM)
+    #   Cycle B: 16th (after 8:00 AM) -> 1st of next month (till 8:00 AM)
+    #
+    # Default range shown on the frontend:
+    #   - If now >= 16th of current month, 8:00 AM:
+    #       1st of current month, 8:00 AM  ->  16th of current month, 8:00 AM
+    #   - Otherwise:
+    #       16th of last month, 8:00 AM    ->  1st of current month, 8:00 AM
     # ---------------------------------------------------------------
-    cutoff_date = st.date_input(
-        "Show records where 'AIP Follow-up Latest Date' is after:",
-        value=date(2026, 7, 1)  # default = 1-Jul-26
+    now = datetime.now()
+    mid_month_8am = datetime(now.year, now.month, 16, 8, 0)
+    eight_am = time(8, 0)
+
+    if now >= mid_month_8am:
+        # Currently in Cycle B -> show the just-completed Cycle A window
+        default_start_date = date(now.year, now.month, 1)
+        default_end_date = date(now.year, now.month, 16)
+    else:
+        # Currently in Cycle A -> show the just-completed Cycle B window
+        # (16th of last month -> 1st of this month; handles Jan -> Dec rollover)
+        first_of_this_month = date(now.year, now.month, 1)
+        last_month_end = first_of_this_month - timedelta(days=1)
+        default_start_date = date(last_month_end.year, last_month_end.month, 16)
+        default_end_date = first_of_this_month
+
+    # ---------------------------------------------------------------
+    # Frontend controls — pre-filled with the computed cycle window,
+    # but manually adjustable by the user.
+    # ---------------------------------------------------------------
+    st.markdown("**AIP Follow-up Latest Date window** (records *after* Start and *till* End are included)")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Start date", value=default_start_date)
+        start_time = st.time_input("Start time", value=eight_am)
+    with col2:
+        end_date = st.date_input("End date", value=default_end_date)
+        end_time = st.time_input("End time", value=eight_am)
+
+    start_dt = datetime.combine(start_date, start_time)
+    end_dt = datetime.combine(end_date, end_time)
+
+    if start_dt >= end_dt:
+        st.error("Start datetime must be before End datetime.")
+        st.stop()
+
+    st.caption(
+        f"Including records with 'AIP Follow-up Latest Date' after "
+        f"**{start_dt.strftime('%d-%b-%Y %I:%M %p')}** and till "
+        f"**{end_dt.strftime('%d-%b-%Y %I:%M %p')}**"
     )
 
     # Parse the follow-up date column into a real datetime so the
-    # comparison is a true date comparison (not a string comparison).
-    # Handles values like "1-Jul-26", "01/07/2026", Excel datetimes, etc.
+    # comparison is a true datetime comparison (not a string comparison).
     df["_followup_dt"] = pd.to_datetime(
         df["AIP Follow-up Latest Date"], errors="coerce", dayfirst=True
     )
 
-    # Store an ISO-formatted helper column (YYYY-MM-DD) so SQLite can
-    # compare dates correctly.
-    df["_followup_iso"] = df["_followup_dt"].dt.strftime("%Y-%m-%d")
+    # ISO-formatted helper column (YYYY-MM-DD HH:MM:SS) so SQLite can
+    # compare datetimes correctly via string comparison.
+    df["_followup_iso"] = df["_followup_dt"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
     # Create SQLite in-memory DB
     conn = sqlite3.connect(":memory:")
     df.to_sql("aip_master", conn, index=False, if_exists="replace")
 
-    # SQL Query (date cutoff passed as a parameter from the date picker)
+    # SQL Query (datetime cutoff passed as a parameter from the frontend)
     query = """
 
 WITH base1 AS (SELECT "ADEK Applicant ID",
@@ -102,17 +147,28 @@ FROM aip_master)
 SELECT * FROM base1
 WHERE "AIP Reason" <> "AIP cannot be submitted"
   AND "_followup_iso" IS NOT NULL
-  AND "_followup_iso" > ?;
+  AND "_followup_iso" > ?
+  AND "_followup_iso" <= ?;
 
     """
 
-    # Run query with the selected date as a parameter (ISO format)
-    result_df = pd.read_sql_query(query, conn, params=[cutoff_date.strftime("%Y-%m-%d")])
+    # Run query with the selected datetime window as parameters (ISO format)
+    result_df = pd.read_sql_query(
+        query,
+        conn,
+        params=[
+            start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        ],
+    )
 
     # Drop the internal helper column before displaying/exporting
     result_df = result_df.drop(columns=["_followup_iso"])
 
-    st.subheader(f"Filtered Result — records after {cutoff_date.strftime('%d-%b-%y')}")
+    st.subheader(
+        f"Filtered Result — {start_dt.strftime('%d-%b-%Y %I:%M %p')} "
+        f"to {end_dt.strftime('%d-%b-%Y %I:%M %p')}"
+    )
     st.write(f"Total records: {len(result_df)}")
     st.dataframe(result_df)
 
