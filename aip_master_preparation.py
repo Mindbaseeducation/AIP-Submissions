@@ -133,7 +133,6 @@ WITH base1 AS (SELECT "ADEK Applicant ID",
        CASE WHEN "Follow up (TSI) : 15th of the month" = 0 THEN 'Further AIP Follow-up not required - Refer to column AR for remark' ELSE "Follow up (TSI) : 15th of the month" END AS "Follow up (TSI) : 15th of the month",
        CASE WHEN "Follow up (TSI) : 30th of the month" = 0 THEN 'Further AIP Follow-up not required - Refer to column AR for remark' ELSE "Follow up (TSI) : 30th of the month" END AS "Follow up (TSI) : 30th of the month",
        CASE WHEN "Further AIP Required" IN ("No","#N/A") OR "Further AIP Required" IS NULL THEN 'No' ELSE "Further AIP Required" END AS "Further AIP Required",
-       CASE WHEN "Reason for not submitting an AIP" = 0 THEN '-' ELSE "Reason for not submitting an AIP" END AS "Reason for not submitting an AIP",
        CASE WHEN "Further AIP Required" = "Yes" THEN '-'
             WHEN ("Reason for not submitting follow up on AIP" = "#N/A" OR "Reason for not submitting follow up on AIP" IS NULL) AND "Third strategic intervention" = 0 THEN 'AIP cannot be submitted'
             ELSE "Reason for not submitting follow up on AIP" END AS "Reason for not submitting follow up on AIP",
