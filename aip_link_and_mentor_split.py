@@ -231,7 +231,7 @@ if uploaded_file:
         )
 
     # Filename label (defaults to July, editable for other months)
-    label = st.text_input("Filename label (e.g. month)", value="September")
+    label = st.text_input("Filename label (e.g. month)", value="October")
 
     # ---- STEP 2: filters ----
     regional_managers = ["All"] + sorted(df["Regional Manager Name"].dropna().unique())
